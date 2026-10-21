@@ -1,0 +1,44 @@
+name: SHBiomeColors
+version: '${project.version}'
+main: org.Cry_Legende.sHBiomeColors.SHBiomeColors
+bootstrapper: org.Cry_Legende.sHBiomeColors.SHBiomeColorsBootstrap
+api-version: '1.21'
+author: Cry_Legende
+description: Couleurs de biome personnalisées (herbe, feuillage, eau, ciel, brouillard) via un datapack généré au démarrage
+dependencies:
+  server:
+    FastAsyncWorldEdit:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    WorldEdit:
+      load: BEFORE
+      required: false
+      join-classpath: true
+
+permissions:
+  shbiomecolors.admin:
+    description: Toutes les commandes SHBiomeColors
+    default: op
+    children:
+      shbiomecolors.grass: true
+      shbiomecolors.foliage: true
+      shbiomecolors.water: true
+      shbiomecolors.waterfog: true
+      shbiomecolors.sky: true
+      shbiomecolors.fog: true
+      shbiomecolors.get: true
+  shbiomecolors.grass:
+    default: op
+  shbiomecolors.foliage:
+    default: op
+  shbiomecolors.water:
+    default: op
+  shbiomecolors.waterfog:
+    default: op
+  shbiomecolors.sky:
+    default: op
+  shbiomecolors.fog:
+    default: op
+  shbiomecolors.get:
+    default: op

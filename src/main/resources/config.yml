@@ -1,0 +1,29 @@
+# SHBiomeColors - couleurs de biome personnalisées (remplace CustomBiomeColors)
+#
+# Les biomes sont enregistrés dans biomes.yml puis écrits dans un datapack (dossier datapack/)
+# chargé par le serveur au démarrage. Une couleur modifiée en jeu s'applique donc au prochain redémarrage.
+
+prefix: '&7&l« &e&lSH &8&l» &7'
+
+# Volume maximal d'une sélection WorldEdit (en blocs) pour les commandes /set...color
+volume-max: 8000000
+
+messages:
+  usage: '&7Utilisation : &e/{commande} <#couleur|defaut> [biome:nom]'
+  joueur-seulement: '&7Commande réservée aux &cjoueurs&7.'
+  worldedit-absent: '&7WorldEdit est &cintrouvable&7 sur ce serveur.'
+  selection-requise: '&7Faites d''abord une &esélection WorldEdit&7.'
+  selection-trop-grande: '&7Sélection &ctrop grande &7({volume} blocs, maximum {max}).'
+  couleur-invalide: '&7Couleur &cinvalide &7: utilisez &e#rrggbb&7 ou &edefaut&7.'
+  defaut-interdit: '&7Seules l''herbe et le feuillage acceptent &edefaut&7.'
+  nom-invalide: '&7Nom de biome &cinvalide &7: lettres minuscules, chiffres, &e_ - . /&7.'
+  modifie: '&7Biome &e{biome} &7: {couleur} = &e{valeur}&7. Couleurs visibles au &eprochain redémarrage&7.'
+  applique: '&7Biome &e{biome} &aappliqué &7à la sélection ({cellules} cellules).'
+  en-attente: '&7La zone passera dans ce biome au &eprochain redémarrage&7.'
+  biome-actuel: '&7Biome ici : &e{biome}'
+  biome-vanilla: '&7Biome vanilla : couleurs par défaut du jeu.'
+  ligne-couleur: '&8 - &7{couleur} : &e{valeur}'
+  liste: '&7Biomes personnalisés (&e{nombre}&7) : &e{biomes}'
+  inconnu: '&7Biome &e{biome} &cinconnu&7.'
+  pas-charge: '&7Le biome &e{biome} &7n''est pas encore chargé : redémarrez le serveur.'
+  recharge: '&7Biomes &arechargés &7({nombre}), datapack régénéré : effet au &eprochain redémarrage&7.'
