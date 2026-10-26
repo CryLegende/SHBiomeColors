@@ -1,6 +1,7 @@
 package org.Cry_Legende.sHBiomeColors;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -94,7 +95,11 @@ final class CustomBiome {
         return map;
     }
 
-    static CustomBiome fromYaml(Map<?, ?> map) {
+    /**
+     * Une couleur invalide garde la valeur par défaut (avertissement) : ignorer le biome entier ferait
+     * disparaître du datapack un biome encore utilisé par des chunks, qui repasseraient en plains.
+     */
+    static CustomBiome fromYaml(Map<?, ?> map, List<String> warnings) {
         Object id = map.get("id");
         if (id == null || !isValidId(id.toString())) {
             return null;
@@ -103,9 +108,14 @@ final class CustomBiome {
         for (ColorType type : ColorType.values()) {
             Object raw = map.get(type.label);
             if (raw != null) {
-                int color = parse(raw.toString());
-                if (color != DEFAULT || type.allowDefault) {
-                    biome.set(type, color);
+                try {
+                    int color = parse(raw.toString());
+                    if (color != DEFAULT || type.allowDefault) {
+                        biome.set(type, color);
+                    }
+                } catch (IllegalArgumentException e) {
+                    warnings.add("Couleur " + type.label + " invalide dans biomes.yml (" + id + ") : " + e.getMessage()
+                        + ", valeur par défaut gardée.");
                 }
             }
         }

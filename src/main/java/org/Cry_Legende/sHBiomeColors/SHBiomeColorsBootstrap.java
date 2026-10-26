@@ -5,6 +5,7 @@ import io.papermc.paper.plugin.bootstrap.PluginBootstrap;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 
 import java.io.IOException;
+import java.nio.file.Files;
 
 /**
  * Exécuté avant le chargement des datapacks et des mondes : sans ça, les chunks utilisant
@@ -21,11 +22,15 @@ public class SHBiomeColorsBootstrap implements PluginBootstrap {
                 context.getLogger().info(imported + " biomes importés depuis CustomBiomeColors/data.json.");
             }
             store.writeDatapack();
+            store.warnings.forEach(context.getLogger()::warn);
+            context.getLogger().info(store.all().size() + " biomes personnalisés ajoutés au datapack.");
         } catch (IOException | RuntimeException e) {
             context.getLogger().error("Datapack SHBiomeColors impossible à générer : " + e);
-            return;
+            // Le datapack déjà sur disque reste chargé : sans lui, les chunks à biome personnalisé repasseraient en plains
+            if (!Files.exists(store.packDir().resolve("pack.mcmeta"))) {
+                return;
+            }
         }
-        store.warnings.forEach(context.getLogger()::warn);
 
         context.getLifecycleManager().registerEventHandler(LifecycleEvents.DATAPACK_DISCOVERY, event -> {
             try {
@@ -34,6 +39,5 @@ public class SHBiomeColorsBootstrap implements PluginBootstrap {
                 context.getLogger().error("Datapack SHBiomeColors non chargé : " + e.getMessage());
             }
         });
-        context.getLogger().info(store.all().size() + " biomes personnalisés ajoutés au datapack.");
     }
 }

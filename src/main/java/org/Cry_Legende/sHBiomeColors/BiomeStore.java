@@ -7,6 +7,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.Cry_Legende.sHBiomeColors.CustomBiome.ColorType;
+import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.IOException;
@@ -33,6 +34,8 @@ final class BiomeStore {
     private final Map<String, CustomBiome> biomes = new LinkedHashMap<>();
     private final List<Map<String, Object>> pending = new ArrayList<>();
     final List<String> warnings = new ArrayList<>();
+    // Faux tant qu'une lecture n'a pas abouti : on ne réécrit pas un fichier qu'on n'a pas pu lire
+    private boolean loaded;
 
     BiomeStore(Path dataDir) {
         this.dataDir = dataDir;
@@ -46,37 +49,58 @@ final class BiomeStore {
      * Charge biomes.yml et en-attente.yml ; au premier démarrage, importe plugins/CustomBiomeColors/data.json.
      */
     int load() throws IOException {
+        Files.createDirectories(dataDir);
+        Path file = dataDir.resolve("biomes.yml");
+        Path pendingFile = dataDir.resolve("en-attente.yml");
+        // Lecture stricte avant de toucher à l'état : un YAML cassé ne doit pas vider les biomes ni le datapack
+        YamlConfiguration pendingYaml = Files.exists(pendingFile) ? read(pendingFile) : null;
+        YamlConfiguration biomesYaml = Files.exists(file) ? read(file) : null;
+
         biomes.clear();
         pending.clear();
         warnings.clear();
-        Files.createDirectories(dataDir);
-        Path file = dataDir.resolve("biomes.yml");
         int imported = 0;
-        if (!Files.exists(file)) {
+        if (biomesYaml == null) {
             imported = importLegacy();
             save();
+            biomesYaml = read(file);
         }
-        for (Map<?, ?> map : YamlConfiguration.loadConfiguration(file.toFile()).getMapList("biomes")) {
-            try {
-                CustomBiome biome = CustomBiome.fromYaml(map);
-                if (biome == null) {
-                    warnings.add("Biome sans id valide ignoré : " + map);
-                } else {
-                    biomes.put(biome.id, biome);
-                }
-            } catch (IllegalArgumentException e) {
-                warnings.add("Couleur invalide dans biomes.yml (" + map.get("id") + ") : " + e.getMessage());
+        for (Map<?, ?> map : biomesYaml.getMapList("biomes")) {
+            CustomBiome biome = CustomBiome.fromYaml(map, warnings);
+            if (biome == null) {
+                warnings.add("Biome sans id valide ignoré : " + map);
+            } else {
+                biomes.put(biome.id, biome);
             }
         }
-        Path pendingFile = dataDir.resolve("en-attente.yml");
-        if (Files.exists(pendingFile)) {
-            for (Map<?, ?> map : YamlConfiguration.loadConfiguration(pendingFile.toFile()).getMapList("zones")) {
+        if (pendingYaml != null) {
+            for (Map<?, ?> map : pendingYaml.getMapList("zones")) {
                 Map<String, Object> zone = new LinkedHashMap<>();
                 map.forEach((k, v) -> zone.put(String.valueOf(k), v));
                 pending.add(zone);
             }
         }
+        loaded = true;
         return imported;
+    }
+
+    /**
+     * Lit un YAML en échouant s'il est invalide (loadConfiguration rend alors une configuration vide en silence).
+     */
+    private static YamlConfiguration read(Path file) throws IOException {
+        YamlConfiguration yaml = new YamlConfiguration();
+        try {
+            yaml.load(file.toFile());
+        } catch (InvalidConfigurationException e) {
+            throw new IOException(file.getFileName() + " illisible : " + e.getMessage(), e);
+        }
+        return yaml;
+    }
+
+    private void checkWritable(Path file) throws IOException {
+        if (!loaded && Files.exists(file)) {
+            throw new IOException(file.getFileName() + " n'a pas pu être lu : sauvegarde refusée pour ne pas l'écraser");
+        }
     }
 
     private int importLegacy() throws IOException {
@@ -101,6 +125,7 @@ final class BiomeStore {
     }
 
     void save() throws IOException {
+        checkWritable(dataDir.resolve("biomes.yml"));
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.options().setHeader(List.of(
             "Biomes personnalisés. Couleurs en #rrggbb ; herbe et feuillage acceptent aussi 'defaut'.",
@@ -110,6 +135,7 @@ final class BiomeStore {
     }
 
     void savePending() throws IOException {
+        checkWritable(dataDir.resolve("en-attente.yml"));
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.set("zones", pending);
         yaml.save(dataDir.resolve("en-attente.yml").toFile());
