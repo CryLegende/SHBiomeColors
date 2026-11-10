@@ -7,6 +7,9 @@ import io.papermc.paper.registry.RegistryAccess;
 import io.papermc.paper.registry.RegistryKey;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.Cry_Legende.sHBiomeColors.CustomBiome.ColorType;
+import org.Cry_Legende.sHBiomeColors.network.HostGuard;
+import org.Cry_Legende.sHBiomeColors.network.ShNetworkLink;
+import org.Cry_Legende.sHBiomeColors.network.SkyBridgeHostGuard;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
@@ -34,6 +37,9 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
     private static final String ID_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789_-";
     private final Random random = new Random();
     private BiomeStore store;
+    // Mode réseau : null tant que SHNetwork (partage des biomes) ou SHSkyBridge (hôte des îles) n'est pas là
+    private BiomeSync sync;
+    private HostGuard hostGuard;
 
     @Override
     public void onEnable() {
@@ -50,7 +56,48 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
         }
         getServer().getPluginManager().registerEvents(this, this);
         registerCommands();
-        Bukkit.getScheduler().runTask(this, () -> Bukkit.getWorlds().forEach(this::applyPending));
+        openNetwork();
+        Bukkit.getScheduler().runTask(this, () -> Bukkit.getWorlds().forEach(world -> applyPending(world, false)));
+    }
+
+    /**
+     * Mode réseau : seulement si reseau.actif et si SHNetwork / SHSkyBridge sont chargés. Sans eux rien ne change.
+     */
+    private void openNetwork() {
+        if (!getConfig().getBoolean("reseau.actif", true)) {
+            return;
+        }
+        var plugins = Bukkit.getPluginManager();
+        if (plugins.isPluginEnabled("SHNetwork")) {
+            try {
+                sync = new BiomeSync(getLogger(), store, ShNetworkLink.open());
+                sync.start();
+                // Laisse le temps au bus de se connecter avant d'annoncer nos biomes
+                Bukkit.getScheduler().runTaskLater(this, () -> sync.hello(), 200L);
+                getLogger().info("Mode réseau : les biomes sont partagés avec les autres serveurs.");
+            } catch (LinkageError | RuntimeException e) {
+                sync = null;
+                getLogger().warning("SHNetwork présent mais inutilisable, biomes non partagés : " + e);
+            }
+        }
+        if (plugins.isPluginEnabled("SHSkyBridge") && plugins.isPluginEnabled("SuperiorSkyblock2")) {
+            try {
+                hostGuard = SkyBridgeHostGuard.open();
+                getLogger().info("Mode réseau : seules les zones des îles hébergées par ce serveur sont modifiées.");
+                int interval = getConfig().getInt("reseau.relecture-zones", 60);
+                if (interval > 0) {
+                    long ticks = interval * 20L;
+                    Bukkit.getScheduler().runTaskTimer(this, () -> {
+                        if (!store.pending().isEmpty()) {
+                            Bukkit.getWorlds().forEach(world -> applyPending(world, true));
+                        }
+                    }, ticks, ticks);
+                }
+            } catch (LinkageError | RuntimeException e) {
+                hostGuard = null;
+                getLogger().warning("SHSkyBridge présent mais inutilisable, hôte des îles non vérifié : " + e);
+            }
+        }
     }
 
     private static Registry<Biome> biomes() {
@@ -116,10 +163,13 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onWorldLoad(WorldLoadEvent event) {
-        applyPending(event.getWorld());
+        applyPending(event.getWorld(), false);
     }
 
-    private void applyPending(World world) {
+    /**
+     * @param silent vrai pour les passages répétés du mode réseau : les zones gardées ne sont pas signalées à chaque fois
+     */
+    private void applyPending(World world, boolean silent) {
         boolean changed = false;
         Iterator<Map<String, Object>> it = store.pending().iterator();
         while (it.hasNext()) {
@@ -132,7 +182,12 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
             Biome biome = key == null ? null : biomes().get(key);
             Zone zone = Zone.fromYaml(raw);
             if (biome == null || zone == null) {
-                getLogger().warning("Zone en attente non appliquée dans " + world.getName() + " : biome " + id + " non chargé.");
+                if (!silent) {
+                    getLogger().warning("Zone en attente non appliquée dans " + world.getName() + " : biome " + id + " non chargé.");
+                }
+                continue;
+            }
+            if (!hostedHere(world, zone, silent)) {
                 continue;
             }
             int cells = apply(world, zone, biome);
@@ -143,6 +198,29 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
         if (changed) {
             savePending();
         }
+    }
+
+    /**
+     * Mode réseau : une zone en attente n'est appliquée que dans une île hébergée ici (ailleurs, ses chunks ne sont
+     * pas à jour). Sinon elle reste en attente, intacte, et sera revue au prochain passage.
+     */
+    private boolean hostedHere(World world, Zone zone, boolean silent) {
+        if (hostGuard == null) {
+            return true;
+        }
+        HostGuard.Result result = hostGuard.check(world, zone.minX, zone.minY, zone.minZ, zone.maxX, zone.maxY, zone.maxZ);
+        if (result.kind() == HostGuard.Kind.LOCAL) {
+            return true;
+        }
+        if (!silent) {
+            String reason = switch (result.kind()) {
+                case REMOTE -> "île hébergée par " + result.host();
+                case MIXED -> "zone à cheval sur plusieurs serveurs";
+                default -> "île introuvable pour l'instant";
+            };
+            getLogger().info("Zone en attente gardée dans " + world.getName() + " : " + reason + ".");
+        }
+        return false;
     }
 
     private void savePending() {
@@ -207,7 +285,7 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
                 return;
             }
             Zone zone = selection(player);
-            if (zone == null) {
+            if (zone == null || !hostAllowed(player, zone)) {
                 return;
             }
 
@@ -219,11 +297,16 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
             }
             biome.set(type, color);
             store.put(biome);
+            boolean saved = false;
             try {
                 store.save();
                 store.writeDatapack();
+                saved = true;
             } catch (IOException e) {
                 getLogger().severe("Sauvegarde des biomes impossible : " + e.getMessage());
+            }
+            if (saved && sync != null) {
+                sync.publish(biome);
             }
             send(player, "modifie", "{biome}", id, "{couleur}", type.label, "{valeur}", CustomBiome.hex(color));
 
@@ -308,6 +391,29 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
 
     // ------------------------------------------------------------------ utilitaires
 
+    /**
+     * Mode réseau : refuse une zone dans une île hébergée par un autre serveur, ou à cheval sur plusieurs.
+     */
+    private boolean hostAllowed(Player player, Zone zone) {
+        if (hostGuard == null) {
+            return true;
+        }
+        HostGuard.Result result = hostGuard.check(player.getWorld(), zone.minX, zone.minY, zone.minZ, zone.maxX, zone.maxY, zone.maxZ);
+        switch (result.kind()) {
+            case REMOTE -> {
+                send(player, "ile-autre-serveur", "{serveur}", result.host());
+                return false;
+            }
+            case MIXED -> {
+                send(player, "selection-plusieurs-serveurs");
+                return false;
+            }
+            default -> {
+                return true;
+            }
+        }
+    }
+
     private Zone selection(Player player) {
         if (!Bukkit.getPluginManager().isPluginEnabled("FastAsyncWorldEdit") && !Bukkit.getPluginManager().isPluginEnabled("WorldEdit")) {
             send(player, "worldedit-absent");
@@ -354,7 +460,10 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
     }
 
     private void send(CommandSender sender, String key, String... replacements) {
-        String message = getConfig().getString("messages." + key, key);
+        String message = getConfig().getString("messages." + key);
+        if (message == null) {
+            message = key;
+        }
         for (int i = 0; i + 1 < replacements.length; i += 2) {
             message = message.replace(replacements[i], replacements[i + 1]);
         }

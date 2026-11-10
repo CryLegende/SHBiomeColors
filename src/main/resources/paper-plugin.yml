@@ -15,6 +15,19 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
+    # Mode réseau : sans eux le plugin se comporte comme sur un serveur seul
+    SHNetwork:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    SHSkyBridge:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    SuperiorSkyblock2:
+      load: BEFORE
+      required: false
+      join-classpath: true
 
 permissions:
   shbiomecolors.admin:

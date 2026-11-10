@@ -2,11 +2,34 @@
 #
 # Les biomes sont enregistrés dans biomes.yml puis écrits dans un datapack (dossier datapack/)
 # chargé par le serveur au démarrage. Une couleur modifiée en jeu s'applique donc au prochain redémarrage.
+#
+# Commandes (la sélection WorldEdit du joueur reçoit le biome) :
+#   /setgrasscolor, /setfoliagecolor, /setwatercolor, /setwaterfogcolor, /setskycolor, /setfogcolor
+#       <#couleur|defaut> [biome:nom]   (la double barre //setgrasscolor... fonctionne aussi)
+#   /getbiomecolors                     couleurs du biome où se trouve le joueur
+#   /shbiomecolors [liste|reload]       liste des biomes personnalisés, relecture de biomes.yml
+#
+# Permissions (op par défaut) : shbiomecolors.admin (toutes), shbiomecolors.grass, .foliage, .water, .waterfog,
+# .sky, .fog (une par commande de couleur) et shbiomecolors.get
 
 prefix: '&7&l« &e&lSH &8&l» &7'
 
 # Volume maximal d'une sélection WorldEdit (en blocs) pour les commandes /set...color
 volume-max: 8000000
+
+# Mode réseau : plusieurs serveurs de jeu qui partagent les mêmes îles. Sans SHNetwork ni SHSkyBridge, cette section est sans effet.
+reseau:
+  # Interrupteur général du mode réseau.
+  # Avec SHNetwork : chaque biome créé ou modifié par /set...color est envoyé aux autres serveurs, qui l'ajoutent
+  # à leur biomes.yml et à leur datapack (actif à leur prochain redémarrage) sans toucher à aucune zone. Au démarrage,
+  # le serveur annonce ses biomes et reçoit ceux qui lui manquent ; un biome qui a d'autres couleurs ailleurs n'est
+  # pas écrasé, il est signalé dans les logs.
+  # Avec SHSkyBridge : une sélection n'est modifiée que dans une île hébergée par ce serveur, et une zone en attente
+  # d'un redémarrage ne s'applique que dans une île hébergée ici (sinon elle reste en attente, intacte).
+  actif: true
+  # Avec SHSkyBridge : toutes les N secondes, nouvel essai des zones en attente gardées parce que leur île n'est pas
+  # encore chargée ou n'est pas hébergée ici. 0 = pas de nouvel essai.
+  relecture-zones: 60
 
 messages:
   usage: '&7Utilisation : &e/{commande} <#couleur|defaut> [biome:nom]'
@@ -27,3 +50,5 @@ messages:
   inconnu: '&7Biome &e{biome} &cinconnu&7.'
   pas-charge: '&7Le biome &e{biome} &7n''est pas encore chargé : redémarrez le serveur.'
   recharge: '&7Biomes &arechargés &7({nombre}), datapack régénéré : effet au &eprochain redémarrage&7.'
+  ile-autre-serveur: '&7Cette île est &chébergée par le serveur {serveur}&7 : faites la modification &esur ce serveur&7.'
+  selection-plusieurs-serveurs: '&7La sélection est &cà cheval sur plusieurs serveurs&7 : restez dans &eune seule île&7.'

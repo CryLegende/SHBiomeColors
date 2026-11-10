@@ -1,5 +1,6 @@
 package org.Cry_Legende.sHBiomeColors;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -59,6 +60,24 @@ final class CustomBiome {
         CustomBiome biome = new CustomBiome(newId);
         System.arraycopy(colors, 0, biome.colors, 0, colors.length);
         return biome;
+    }
+
+    boolean sameColors(CustomBiome other) {
+        return Arrays.equals(colors, other.colors);
+    }
+
+    /**
+     * Les six couleurs sur une ligne, dans l'ordre de {@link ColorType} : sert à comparer un biome d'un serveur à l'autre.
+     */
+    String signature() {
+        StringBuilder sb = new StringBuilder();
+        for (ColorType type : ColorType.values()) {
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(hex(get(type)));
+        }
+        return sb.toString();
     }
 
     static boolean isValidId(String id) {
