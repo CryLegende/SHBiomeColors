@@ -16,12 +16,16 @@ import org.bukkit.Registry;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.InvalidConfigurationException;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -37,6 +41,8 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
     private static final String ID_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789_-";
     private final Random random = new Random();
     private BiomeStore store;
+    private Messages messages;
+    private BukkitTask zoneRetryTask;
     // Mode réseau : null tant que SHNetwork (partage des biomes) ou SHSkyBridge (hôte des îles) n'est pas là
     private BiomeSync sync;
     private HostGuard hostGuard;
@@ -44,6 +50,13 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        messages = new Messages(this);
+        try {
+            messages.load();
+        } catch (IOException | InvalidConfigurationException e) {
+            getLogger().severe("messages.yml illisible, textes du jar utilisés : " + e.getMessage());
+            messages.useJar();
+        }
         store = new BiomeStore(getDataFolder().toPath());
         try {
             store.load();
@@ -84,19 +97,34 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
             try {
                 hostGuard = SkyBridgeHostGuard.open();
                 getLogger().info("Mode réseau : seules les zones des îles hébergées par ce serveur sont modifiées.");
-                int interval = getConfig().getInt("reseau.relecture-zones", 60);
-                if (interval > 0) {
-                    long ticks = interval * 20L;
-                    Bukkit.getScheduler().runTaskTimer(this, () -> {
-                        if (!store.pending().isEmpty()) {
-                            Bukkit.getWorlds().forEach(world -> applyPending(world, true));
-                        }
-                    }, ticks, ticks);
-                }
+                scheduleZoneRetry();
             } catch (LinkageError | RuntimeException e) {
                 hostGuard = null;
                 getLogger().warning("SHSkyBridge présent mais inutilisable, hôte des îles non vérifié : " + e);
             }
+        }
+    }
+
+    /**
+     * Mode réseau avec SHSkyBridge : relance périodique des zones en attente. Appelé à l'activation et au reload,
+     * qui annule le timer précédent pour prendre le nouvel intervalle.
+     */
+    private void scheduleZoneRetry() {
+        if (zoneRetryTask != null) {
+            zoneRetryTask.cancel();
+            zoneRetryTask = null;
+        }
+        if (hostGuard == null) {
+            return;
+        }
+        int interval = getConfig().getInt("reseau.relecture-zones", 60);
+        if (interval > 0) {
+            long ticks = interval * 20L;
+            zoneRetryTask = Bukkit.getScheduler().runTaskTimer(this, () -> {
+                if (!store.pending().isEmpty()) {
+                    Bukkit.getWorlds().forEach(world -> applyPending(world, true));
+                }
+            }, ticks, ticks);
         }
     }
 
@@ -357,36 +385,162 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
         }
     }
 
+    /** Sous-commandes de /shbiomecolors, dans l'ordre d'affichage. */
+    private static final List<String> ADMIN_SUBCOMMANDS = List.of("list", "reload", "info", "pending");
+
+    /** Sous-commandes que l'expéditeur a le droit d'utiliser. */
+    private List<String> usableSubcommands(CommandSender sender) {
+        List<String> usable = new ArrayList<>();
+        for (String sub : ADMIN_SUBCOMMANDS) {
+            if (sender.hasPermission("shbiomecolors.admin." + sub)) {
+                usable.add(sub);
+            }
+        }
+        return usable;
+    }
+
     private final class AdminCommand implements BasicCommand {
+        // Visible dès qu'une sous-commande est permise : un délégué qui n'a qu'admin.reload doit y accéder
         @Override
-        public String permission() {
-            return "shbiomecolors.admin";
+        public boolean canUse(CommandSender sender) {
+            return !usableSubcommands(sender).isEmpty();
         }
 
         @Override
         public void execute(CommandSourceStack source, String[] args) {
             CommandSender sender = source.getSender();
-            if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
-                reloadConfig();
-                try {
-                    store.load();
-                    store.writeDatapack();
-                } catch (IOException e) {
-                    getLogger().severe("Rechargement impossible : " + e.getMessage());
-                }
-                store.warnings.forEach(getLogger()::warning);
-                send(sender, "recharge", "{nombre}", String.valueOf(store.all().size()));
+            List<String> usable = usableSubcommands(sender);
+            String sub = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : "";
+            // « liste » : ancien nom de list
+            if (sub.equals("liste")) {
+                sub = "list";
+            }
+            if (!usable.contains(sub)) {
+                send(sender, "admin-usage", "{sous-commandes}", String.join("|", usable));
                 return;
             }
-            List<String> ids = new ArrayList<>();
-            store.all().forEach(b -> ids.add(b.id));
-            send(sender, "liste", "{nombre}", String.valueOf(ids.size()), "{biomes}", String.join("&7, &e", ids));
+            switch (sub) {
+                case "reload" -> reloadAll(sender);
+                case "info" -> info(sender, args);
+                case "pending" -> pending(sender);
+                default -> {
+                    List<String> ids = new ArrayList<>();
+                    store.all().forEach(b -> ids.add(b.id));
+                    send(sender, "liste", "{nombre}", String.valueOf(ids.size()), "{biomes}", String.join("&7, &e", ids));
+                }
+            }
         }
 
         @Override
         public Collection<String> suggest(CommandSourceStack source, String[] args) {
-            return args.length <= 1 ? List.of("liste", "reload") : List.of();
+            CommandSender sender = source.getSender();
+            if (args.length <= 1) {
+                String typed = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
+                return usableSubcommands(sender).stream().filter(name -> name.startsWith(typed)).toList();
+            }
+            if (args.length == 2 && args[0].equalsIgnoreCase("info") && sender.hasPermission("shbiomecolors.admin.info")) {
+                String typed = args[1].toLowerCase(Locale.ROOT);
+                return store.all().stream().map(b -> b.id).filter(i -> i.startsWith(typed)).toList();
+            }
+            return List.of();
         }
+    }
+
+    /** Fichier invalide et cause (« fichier|cause »), ou null si config.yml et messages.yml se lisent. */
+    private String checkFiles() {
+        for (String name : new String[] {"config.yml", "messages.yml"}) {
+            File file = new File(getDataFolder(), name);
+            if (!file.exists()) {
+                continue;
+            }
+            try {
+                new YamlConfiguration().load(file);
+            } catch (IOException | InvalidConfigurationException e) {
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                String text = String.valueOf(cause.getMessage()).replaceAll("\\s+", " ").trim();
+                return name + "|" + (text.length() > 200 ? text.substring(0, 200) + "..." : text);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * /shbiomecolors reload : config.yml et messages.yml sont d'abord lus en mode strict, puis biomes.yml et
+     * en-attente.yml (lus avant de toucher à l'état). Au moindre fichier invalide rien n'est remplacé.
+     */
+    private void reloadAll(CommandSender sender) {
+        String error = checkFiles();
+        if (error == null) {
+            try {
+                store.load();
+                store.writeDatapack();
+            } catch (IOException e) {
+                getLogger().severe("Rechargement impossible : " + e.getMessage());
+                error = "biomes.yml|" + e.getMessage();
+            }
+        }
+        if (error != null) {
+            String[] parts = error.split("\\|", 2);
+            getLogger().warning("Rechargement refusé, configuration précédente gardée (" + parts[0] + " : " + parts[1] + ").");
+            send(sender, "reload-erreur", "{fichier}", parts[0], "{erreur}", parts[1]);
+            return;
+        }
+        reloadConfig();
+        try {
+            messages.load();
+        } catch (IOException | InvalidConfigurationException e) {
+            getLogger().warning("messages.yml relu avec erreur : " + e.getMessage());
+        }
+        store.warnings.forEach(getLogger()::warning);
+        scheduleZoneRetry();
+        send(sender, "recharge", "{nombre}", String.valueOf(store.all().size()));
+        send(sender, "recharge-reseau");
+    }
+
+    /** /shbiomecolors info <biome> : les six couleurs d'un biome personnalisé. */
+    private void info(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            send(sender, "admin-usage-info");
+            return;
+        }
+        String id = normalizeId(args[1]);
+        CustomBiome biome = id == null ? null : store.get(id);
+        if (biome == null) {
+            send(sender, "inconnu", "{biome}", args[1]);
+            return;
+        }
+        send(sender, "info-entete", "{biome}", id);
+        for (ColorType type : ColorType.values()) {
+            send(sender, "ligne-couleur", "{couleur}", type.label, "{valeur}", CustomBiome.hex(biome.get(type)));
+        }
+        NamespacedKey key = NamespacedKey.fromString(id);
+        if (key == null || biomes().get(key) == null) {
+            send(sender, "pas-charge", "{biome}", id);
+        }
+    }
+
+    /** /shbiomecolors pending : zones qui attendent un redémarrage ou leur île. */
+    private void pending(CommandSender sender) {
+        List<Map<String, Object>> zones = store.pending();
+        if (zones.isEmpty()) {
+            send(sender, "pending-vide");
+            return;
+        }
+        send(sender, "pending-entete", "{nombre}", String.valueOf(zones.size()));
+        for (Map<String, Object> zone : zones) {
+            send(sender, "pending-ligne",
+                "{monde}", String.valueOf(zone.get("monde")),
+                "{biome}", String.valueOf(zone.get("biome")),
+                "{min}", coords(zone.get("min")),
+                "{max}", coords(zone.get("max")));
+        }
+    }
+
+    private static String coords(Object raw) {
+        if (raw instanceof List<?> list && list.size() == 3) {
+            return list.get(0) + " " + list.get(1) + " " + list.get(2);
+        }
+        return "?";
     }
 
     // ------------------------------------------------------------------ utilitaires
@@ -460,13 +614,10 @@ public class SHBiomeColors extends JavaPlugin implements Listener {
     }
 
     private void send(CommandSender sender, String key, String... replacements) {
-        String message = getConfig().getString("messages." + key);
-        if (message == null) {
-            message = key;
-        }
+        String message = messages.get(key);
         for (int i = 0; i + 1 < replacements.length; i += 2) {
             message = message.replace(replacements[i], replacements[i + 1]);
         }
-        sender.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(getConfig().getString("prefix", "") + message));
+        sender.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(messages.get("prefix") + message));
     }
 }

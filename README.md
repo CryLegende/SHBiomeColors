@@ -39,18 +39,40 @@ Limites : une zone en attente reste sur le serveur où la commande a été lanc�
 
 Sans SHNetwork ni SHSkyBridge, ou sans la section `reseau`, le plugin se comporte comme avant : aucun canal, aucune vérification d'hôte.
 
+## Commandes
+
+| Commande | Alias | Description | Permission |
+|---|---|---|---|
+| `/setgrasscolor <#couleur\|defaut> [biome:nom]` | `//setgrasscolor` | Couleur de l'herbe de la sélection WorldEdit | `shbiomecolors.grass` |
+| `/setfoliagecolor` | `//setfoliagecolor` | Couleur du feuillage | `shbiomecolors.foliage` |
+| `/setwatercolor` | `//setwatercolor` | Couleur de l'eau | `shbiomecolors.water` |
+| `/setwaterfogcolor` | `//setwaterfogcolor` | Couleur du brouillard de l'eau | `shbiomecolors.waterfog` |
+| `/setskycolor` | `//setskycolor` | Couleur du ciel | `shbiomecolors.sky` |
+| `/setfogcolor` | `//setfogcolor` | Couleur du brouillard | `shbiomecolors.fog` |
+| `/getbiomecolors` | `//getbiomecolors` | Couleurs du biome où l'on se trouve | `shbiomecolors.get` |
+| `/shbiomecolors list` | — | Liste des biomes personnalisés (ancien nom : `liste`) | `shbiomecolors.admin.list` |
+| `/shbiomecolors reload` | — | Relit `config.yml`, `messages.yml`, `biomes.yml` et `en-attente.yml`, régénère le datapack et relance le contrôle des zones en attente. Si un fichier est invalide, rien n'est remplacé. | `shbiomecolors.admin.reload` |
+| `/shbiomecolors info <biome>` | — | Les six couleurs d'un biome personnalisé | `shbiomecolors.admin.info` |
+| `/shbiomecolors pending` | — | Zones en attente d'un redémarrage ou de leur île | `shbiomecolors.admin.pending` |
+
+`/shbiomecolors` sans argument affiche les sous-commandes que l'on peut utiliser. Toutes les sous-commandes d'administration marchent depuis la console.
+
 ## Permissions
 
 | Permission | Description | Par défaut |
 |---|---|---|
 | `shbiomecolors.admin` | Toutes les commandes SHBiomeColors | `op` |
-| `shbiomecolors.grass` | — | `op` |
-| `shbiomecolors.foliage` | — | `op` |
-| `shbiomecolors.water` | — | `op` |
-| `shbiomecolors.waterfog` | — | `op` |
-| `shbiomecolors.sky` | — | `op` |
-| `shbiomecolors.fog` | — | `op` |
-| `shbiomecolors.get` | — | `op` |
+| `shbiomecolors.admin.list` | `/shbiomecolors list` | `op` |
+| `shbiomecolors.admin.reload` | `/shbiomecolors reload` | `op` |
+| `shbiomecolors.admin.info` | `/shbiomecolors info` | `op` |
+| `shbiomecolors.admin.pending` | `/shbiomecolors pending` | `op` |
+| `shbiomecolors.grass` | `/setgrasscolor` | `op` |
+| `shbiomecolors.foliage` | `/setfoliagecolor` | `op` |
+| `shbiomecolors.water` | `/setwatercolor` | `op` |
+| `shbiomecolors.waterfog` | `/setwaterfogcolor` | `op` |
+| `shbiomecolors.sky` | `/setskycolor` | `op` |
+| `shbiomecolors.fog` | `/setfogcolor` | `op` |
+| `shbiomecolors.get` | `/getbiomecolors` | `op` |
 
 ## Configuration
 
@@ -58,8 +80,11 @@ Fichiers par défaut repris du serveur (secrets remplacés par `CHANGE_ME`). Cli
 
 <pre>
 plugins/SHBiomeColors/
-└── <a href="src/main/resources/config.yml">config.yml</a>
+├── <a href="src/main/resources/config.yml">config.yml</a>
+└── <a href="src/main/resources/messages.yml">messages.yml</a>
 </pre>
+
+Si `messages.yml` n'existe pas au démarrage, il est créé à partir de l'ancien préfixe et de l'ancienne section `messages:` de `config.yml` (textes déjà personnalisés conservés) ; cette section n'est plus lue ensuite.
 
 ## Compilation
 

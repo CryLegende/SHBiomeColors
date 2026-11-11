@@ -34,6 +34,10 @@ permissions:
     description: Toutes les commandes SHBiomeColors
     default: op
     children:
+      shbiomecolors.admin.list: true
+      shbiomecolors.admin.reload: true
+      shbiomecolors.admin.info: true
+      shbiomecolors.admin.pending: true
       shbiomecolors.grass: true
       shbiomecolors.foliage: true
       shbiomecolors.water: true
@@ -41,17 +45,36 @@ permissions:
       shbiomecolors.sky: true
       shbiomecolors.fog: true
       shbiomecolors.get: true
+  shbiomecolors.admin.list:
+    description: Lister les biomes personnalisés avec /shbiomecolors list
+    default: op
+  shbiomecolors.admin.reload:
+    description: Recharger la configuration et les biomes avec /shbiomecolors reload
+    default: op
+  shbiomecolors.admin.info:
+    description: Voir les couleurs d'un biome personnalisé avec /shbiomecolors info
+    default: op
+  shbiomecolors.admin.pending:
+    description: Voir les zones en attente avec /shbiomecolors pending
+    default: op
   shbiomecolors.grass:
+    description: Changer la couleur de l'herbe avec /setgrasscolor
     default: op
   shbiomecolors.foliage:
+    description: Changer la couleur du feuillage avec /setfoliagecolor
     default: op
   shbiomecolors.water:
+    description: Changer la couleur de l'eau avec /setwatercolor
     default: op
   shbiomecolors.waterfog:
+    description: Changer la couleur du brouillard de l'eau avec /setwaterfogcolor
     default: op
   shbiomecolors.sky:
+    description: Changer la couleur du ciel avec /setskycolor
     default: op
   shbiomecolors.fog:
+    description: Changer la couleur du brouillard avec /setfogcolor
     default: op
   shbiomecolors.get:
+    description: Voir les couleurs du biome où l'on se trouve avec /getbiomecolors
     default: op
